@@ -1,0 +1,115 @@
+#!/bin/bash
+
+INTO=$1; shift
+FROM=$1; shift
+OS=$1; shift
+ARCH=$1; shift
+CONFIG=$1; shift
+
+if [[ -z ${INTO} || -z ${FROM} || -z ${OS} || -z ${ARCH} || -z ${CONFIG} ]]; then
+    echo "USAGE: $0 [OUTPUT PATH] [REPO PATH] [OS] [ARCH] [CONFIG]"
+    exit 1
+fi
+
+if [[ -e "${INTO}" ]]; then
+    echo "ERROR: '${INTO}' already exists"
+    exit 1
+fi
+
+function create_info()
+{
+    local INTO=$1; shift
+    local FROM=$1; shift
+    local CONFIG=$1; shift
+
+    echo $( git -C "${FROM}" rev-parse --short=11 HEAD ) > "${INTO}/COMMIT"
+    echo "${CONFIG}"          > "${INTO}/CONFIG"
+}
+
+SRC_DIR="${FROM}/bin"
+
+NATIVE_TAG="${OS}.${ARCH}.${CONFIG}"
+
+# CoreFX Native Binary
+echo "PREPARE NATIVE (BIN)"
+
+NATIVE_BIN_INTO="${INTO}/native-bin"
+NATIVE_BIN_META_INTO="${NATIVE_BIN_INTO}/meta"
+NATIVE_BIN_FILE_INTO="${NATIVE_BIN_INTO}/file"
+
+mkdir -p "${NATIVE_BIN_INTO}" "${NATIVE_BIN_META_INTO}" "${NATIVE_BIN_FILE_INTO}"
+{
+    find "${SRC_DIR}/${NATIVE_TAG}" \
+        -type f ! -iname '*.dbg' \
+        -exec cp -pt "${NATIVE_BIN_FILE_INTO}" {} \;
+    create_info "${NATIVE_BIN_META_INTO}" "${FROM}" "${CONFIG}"
+
+    pushd "${NATIVE_BIN_INTO}"
+    tar cvzf ../native.bin.tgz *
+    popd
+}
+rm -rf "${NATIVE_BIN_INTO}"
+
+echo "PREPARE NATIVE (DBG)"
+
+NATIVE_DBGINFO_INTO="${INTO}/native-dbginfo"
+NATIVE_DBGINFO_META_INTO="${NATIVE_DBGINFO_INTO}/meta"
+NATIVE_DBGINFO_FILE_INTO="${NATIVE_DBGINFO_INTO}/file"
+
+mkdir -p "${NATIVE_DBGINFO_INTO}" "${NATIVE_DBGINFO_META_INTO}" "${NATIVE_DBGINFO_FILE_INTO}"
+{
+    find "${SRC_DIR}/${NATIVE_TAG}" \
+        -type f -iname '*.dbg' \
+        -exec cp -pt "${NATIVE_DBGINFO_FILE_INTO}" {} \;
+    create_info "${NATIVE_DBGINFO_META_INTO}" "${FROM}" "${CONFIG}"
+
+    pushd "${NATIVE_DBGINFO_INTO}"
+    tar cvzf ../native.dbginfo.tgz *
+    popd
+}
+rm -rf "${NATIVE_DBGINFO_INTO}"
+
+echo "PREPARE MANABED (BIN)"
+
+MANAGED_BIN_INTO="${INTO}/managed-bin"
+MANAGED_BIN_META_INTO="${MANAGED_BIN_INTO}/meta"
+MANAGED_BIN_FILE_INTO="${MANAGED_BIN_INTO}/file"
+
+mkdir -p "${MANAGED_BIN_INTO}" "${MANAGED_BIN_META_INTO}" "${MANAGED_BIN_FILE_INTO}"
+{
+    for DLL_FILE in $(find "${SRC_DIR}/pkg/netcoreapp/runtime" -name "*.dll"); do
+        cp -t "${MANAGED_BIN_FILE_INTO}" "${DLL_FILE}"
+        cp -t "${MANAGED_BIN_FILE_INTO}" "${DLL_FILE%.*}.pdb"
+    done
+    create_info "${MANAGED_BIN_META_INTO}" "${FROM}" "${CONFIG}"
+
+    pushd "${MANAGED_BIN_INTO}"
+    tar cvzf ../managed.bin.tgz *
+    popd
+}
+rm -rf "${MANAGED_BIN_INTO}"
+
+if [[ -z ${PREPARE_MANAGED_PKG} ]]; then
+    PREPARE_MANAGED_PKG=1
+fi
+
+if [[ ${PREPARE_MANAGED_PKG} -ne 0 ]]; then
+    echo "PREPARE MANAGED (PKG)"
+
+    MANAGED_PKG_INTO="${INTO}/managed-pkg"
+    MANAGED_PKG_META_INTO="${MANAGED_PKG_INTO}/meta"
+    MANAGED_PKG_FILE_INTO="${MANAGED_PKG_INTO}/file"
+
+    mkdir -p "${MANAGED_PKG_INTO}" "${MANAGED_PKG_META_INTO}" "${MANAGED_PKG_FILE_INTO}"
+    {
+        find "${SRC_DIR}/packages/${CONFIG}" \
+            -type f -iname '*.nupkg' \
+            -exec cp -pt "${MANAGED_PKG_FILE_INTO}" {} \;
+        create_info "${MANAGED_PKG_META_INTO}" "${FROM}" "${CONFIG}"
+
+        pushd "${MANAGED_PKG_INTO}"
+        tar cvzf ../managed.pkg.tgz *
+        popd
+    }
+    rm -rf "${MANAGED_PKG_INTO}"
+fi

@@ -1,0 +1,124 @@
+#!/bin/bash
+
+INTO=$1; shift
+FROM=$1; shift
+OS=$1; shift
+ARCH=$1; shift
+CONFIG=$1; shift
+
+if [[ -z ${INTO} || -z ${FROM} || -z ${OS} || -z ${ARCH} || -z ${CONFIG} ]]; then
+    echo "USAGE: $0 [OUTPUT PATH] [REPO PATH] [OS] [ARCH] [CONFIG]"
+    exit 1
+fi
+
+if [[ -e "${INTO}" ]]; then
+    echo "ERROR: '${INTO}' already exists"
+    exit 1
+fi
+
+function create_info()
+{
+    local INTO=$1; shift
+    local FROM=$1; shift
+    local CONFIG=$1; shift
+
+    echo $( git -C "${FROM}" rev-parse --short=11 HEAD ) > "${INTO}/COMMIT"
+    echo "${CONFIG}"          > "${INTO}/CONFIG"
+}
+
+TAG="${OS}.${ARCH}.${CONFIG}"
+
+OBJ_DIR="${FROM}/bin/obj/${TAG}"
+BIN_DIR="${FROM}/bin/Product/${TAG}"
+INTEROP_DIR="${BIN_DIR}/bin"
+NUPKG_DIR="${BIN_DIR}/.nuget/pkg"
+
+# CoreCLR Runtime Binary
+echo "PREPARE RUNTIME (BIN)"
+
+RUNTIME_BIN_INTO="${INTO}/runtime-bin"
+RUNTIME_BIN_META_INTO="${RUNTIME_BIN_INTO}/meta"
+RUNTIME_BIN_FILE_INTO="${RUNTIME_BIN_INTO}/file"
+
+mkdir -p "${RUNTIME_BIN_INTO}" "${RUNTIME_BIN_META_INTO}" "${RUNTIME_BIN_FILE_INTO}"
+{
+    find "${BIN_DIR}" -maxdepth 1 ! -iname '*.dbg' -type f -exec cp -pt "${RUNTIME_BIN_FILE_INTO}" {} \;
+    create_info "${RUNTIME_BIN_META_INTO}" "${FROM}" "${CONFIG}"
+
+    pushd "${RUNTIME_BIN_INTO}"
+    tar cvzf ../runtime.bin.tgz *
+    popd
+}
+rm -rf "${RUNTIME_BIN_INTO}"
+
+echo "PREPARE RUNTIME (DBG)"
+
+RUNTIME_DBGINFO_INTO="${INTO}/runtime-dbginfo"
+RUNTIME_DBGINFO_META_INTO="${RUNTIME_DBGINFO_INTO}/meta"
+RUNTIME_DBGINFO_FILE_INTO="${RUNTIME_DBGINFO_INTO}/file"
+
+mkdir -p "${RUNTIME_DBGINFO_INTO}" "${RUNTIME_DBGINFO_META_INTO}" "${RUNTIME_DBGINFO_FILE_INTO}"
+{
+    find "${BIN_DIR}" -maxdepth 1 -iname '*.dbg' -type f -exec cp -pt "${RUNTIME_DBGINFO_FILE_INTO}" {} \;
+    create_info "${RUNTIME_DBGINFO_META_INTO}" "${FROM}" "${CONFIG}"
+
+    pushd "${RUNTIME_DBGINFO_INTO}"
+    tar cvzf ../runtime.dbginfo.tgz *
+    popd
+}
+rm -rf "${RUNTIME_DBGINFO_INTO}"
+
+echo "PREPARE RUNTIME (STUB)"
+
+RUNTIME_STUB_INTO="${INTO}/runtime-stub"
+RUNTIME_STUB_META_INTO="${RUNTIME_STUB_INTO}/meta"
+RUNTIME_STUB_FILE_INTO="${RUNTIME_STUB_INTO}/file"
+
+mkdir -p "${RUNTIME_STUB_INTO}" "${RUNTIME_STUB_META_INTO}" "${RUNTIME_STUB_FILE_INTO}"
+{
+    find "${INTEROP_DIR}" -maxdepth 1 -type f -exec cp -pt "${RUNTIME_STUB_FILE_INTO}" {} \;
+    create_info "${RUNTIME_STUB_META_INTO}" "${FROM}" "${CONFIG}"
+
+    pushd "${RUNTIME_STUB_INTO}"
+    tar cvzf ../runtime.stub.tgz *
+    popd
+}
+rm -rf "${RUNTIME_STUB_INTO}"
+
+echo "PREPARE RUNTIME (NUPKG)"
+
+RUNTIME_NUPKG_INTO="${INTO}/runtime-nupkg"
+RUNTIME_NUPKG_META_INTO="${RUNTIME_NUPKG_INTO}/meta"
+RUNTIME_NUPKG_FILE_INTO="${RUNTIME_NUPKG_INTO}/file"
+
+mkdir -p "${RUNTIME_NUPKG_INTO}" "${RUNTIME_NUPKG_META_INTO}" "${RUNTIME_NUPKG_FILE_INTO}"
+{
+    find "${NUPKG_DIR}" -maxdepth 1 -iname '*.nupkg' -type f -exec cp -pt "${RUNTIME_NUPKG_FILE_INTO}" {} \;
+    create_info "${RUNTIME_NUPKG_META_INTO}" "${FROM}" "${CONFIG}"
+
+    pushd "${RUNTIME_NUPKG_INTO}"
+    tar cvzf ../runtime.nupkg.tgz *
+    popd
+}
+rm -rf "${RUNTIME_NUPKG_INTO}"
+
+echo "PREPARE RUNTIME TEST"
+
+RUNTIME_TEST_INTO="${INTO}/runtime-test"
+RUNTIME_TEST_META_INTO="${RUNTIME_TEST_INTO}/meta"
+RUNTIME_TEST_FILE_INTO="${RUNTIME_TEST_INTO}/file"
+
+mkdir -p "${RUNTIME_TEST_INTO}" "${RUNTIME_TEST_META_INTO}" "${RUNTIME_TEST_FILE_INTO}"
+{
+    cp -pf "${FROM}/tests/"runtest.sh "${RUNTIME_TEST_FILE_INTO}"
+    cp -pf "${FROM}/tests/"tests*.txt "${RUNTIME_TEST_FILE_INTO}"
+    cp -pf "${FROM}/tests/"skipCrossGenFiles.*.txt "${RUNTIME_TEST_FILE_INTO}"
+
+    create_info "${RUNTIME_TEST_META_INTO}" "${FROM}" "${CONFIG}"
+
+    pushd "${RUNTIME_TEST_INTO}"
+    tar cvzf ../runtime.test.tgz *
+    popd
+}
+rm -rf "${RUNTIME_TEST_INTO}"
+
